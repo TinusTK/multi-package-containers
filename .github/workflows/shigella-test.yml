@@ -10,8 +10,8 @@ on:
 env:
   MULLED_NAMESPACE: biocontainers
   MULLED_TOOL_UTIL_SOURCE: git+https://github.com/bgruening/galaxy.git@mulled_quay_enhancements#subdirectory=packages/tool_util
-  MYKROBE_IMAGE: quay.io/biocontainers/mulled-v2-7acdbc45c5bfb4f760cf0d050a399723eaa66bef:9818c34d977963df745e55f26a5065625e265277
-  SHIGAPASS_IMAGE: quay.io/biocontainers/mulled-v2-6a38f5a7b15f5b3fc47af1a2657e729f39012092:415c3538f9fd2baec2e83f24ea3b147dcc5bfd7a
+  MYKROBE_IMAGE: quay.io/biocontainers/mulled-v2-7acdbc45c5bfb4f760cf0d050a399723eaa66bef:9818c34d977963df745e55f26a5065625e265277-0
+  SHIGAPASS_IMAGE: quay.io/biocontainers/mulled-v2-6a38f5a7b15f5b3fc47af1a2657e729f39012092:415c3538f9fd2baec2e83f24ea3b147dcc5bfd7a-0
 
 jobs:
   build-and-test:
