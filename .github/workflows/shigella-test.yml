@@ -1,0 +1,70 @@
+name: Test shigella_typing containers
+
+# Builds the two hash.tsv combinations from the PR with the same command as
+# BioContainers' "Build image" workflow, then runs the shigella_typing Galaxy
+# wrapper tests inside those images (planemo --biocontainers, no conda).
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  MULLED_NAMESPACE: biocontainers
+  MULLED_TOOL_UTIL_SOURCE: git+https://github.com/bgruening/galaxy.git@mulled_quay_enhancements#subdirectory=packages/tool_util
+  MYKROBE_IMAGE: quay.io/biocontainers/mulled-v2-7acdbc45c5bfb4f760cf0d050a399723eaa66bef:9818c34d977963df745e55f26a5065625e265277
+  SHIGAPASS_IMAGE: quay.io/biocontainers/mulled-v2-6a38f5a7b15f5b3fc47af1a2657e729f39012092:415c3538f9fd2baec2e83f24ea3b147dcc5bfd7a
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build images (only the two shigella_typing lines)
+        run: |
+          mkdir only-ours
+          tail -n 2 combinations/hash.tsv > only-ours/hash.tsv
+          cat only-ours/hash.tsv
+          uv run --python 3.9 --with "$MULLED_TOOL_UTIL_SOURCE" python -m galaxy.tool_util.deps.mulled.mulled_build_files \
+              --singularity --namespace $MULLED_NAMESPACE build-and-test ./only-ours --verbose
+          docker images | grep mulled-v2
+
+      - name: Smoke test inside the images
+        run: |
+          docker run --rm "$MYKROBE_IMAGE" mykrobe --version
+          docker run --rm "$MYKROBE_IMAGE" python -c "import pkg_resources, mykrobe; print('pkg_resources ok')"
+          docker run --rm "$SHIGAPASS_IMAGE" bash -c 'bash --version | head -1; which ShigaPass.sh blastn mykrobe; ShigaPass.sh -h | head -5; echo a,b | paste -sd ","'
+
+      - name: Bundle shigella_typing (main)
+        run: |
+          git clone --depth 1 https://github.com/TinusTK/shigella-typing.git st
+          bash st/scripts/bundle_tool.sh "$PWD/build"
+
+      - name: planemo test with the containers (no conda)
+        run: |
+          pip install planemo edam-ontology
+          planemo test --galaxy_branch release_25.1 --biocontainers --no_conda_auto_init \
+              --test_output_json planemo_test.json build/shigella_typing
+
+      - name: Show which container each job used
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          d = json.load(open("planemo_test.json"))
+          for t in d["tests"]:
+              r = t["data"]
+              job = r.get("job") or {}
+              print(t["id"], r.get("status"), job.get("command_line", "")[:0] or "",
+                    "| container:", (job.get("dependencies") or job.get("job_metrics") or ""))
+          PY
+          grep -o 'mulled-v2-[0-9a-f]*' -r planemo_test.json | sort | uniq -c || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: planemo-test
+          path: planemo_test.json
