@@ -1,0 +1,59 @@
+name: Test cdiphtheriae_typing container
+
+# Builds the hash.tsv line from the PR with the same command as
+# BioContainers' "Build image" workflow, then runs the cdiphtheriae_typing
+# Galaxy wrapper tests inside that image (planemo --biocontainers, no conda).
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  MULLED_NAMESPACE: biocontainers
+  MULLED_TOOL_UTIL_SOURCE: git+https://github.com/bgruening/galaxy.git@mulled_quay_enhancements#subdirectory=packages/tool_util
+  CDIPH_IMAGE: quay.io/biocontainers/mulled-v2-21537411c4771e4e702855210543bee025cca4e0:7f18dab2b8b128eb9281995d8141c788f2c9dc98-0
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build image (only the cdiphtheriae_typing line)
+        run: |
+          mkdir only-ours
+          tail -n 1 combinations/hash.tsv > only-ours/hash.tsv
+          cat only-ours/hash.tsv
+          uv run --python 3.9 --with "$MULLED_TOOL_UTIL_SOURCE" python -m galaxy.tool_util.deps.mulled.mulled_build_files \
+              --singularity --namespace $MULLED_NAMESPACE build-and-test ./only-ours --verbose
+          docker images | grep mulled-v2
+
+      - name: Smoke test inside the image
+        run: |
+          docker run --rm "$CDIPH_IMAGE" python --version
+          docker run --rm "$CDIPH_IMAGE" blastn -version
+          docker run --rm "$CDIPH_IMAGE" makeblastdb -version
+
+      - name: Bundle cdiphtheriae_typing (main)
+        run: |
+          git clone --depth 1 https://github.com/TinusTK/corynebacterium-diphtheriae-typing.git cd
+          bash cd/scripts/bundle_tool.sh "$PWD/build"
+
+      - name: planemo test with the container (no conda)
+        run: |
+          pip install planemo edam-ontology
+          planemo test --galaxy_branch release_25.1 --biocontainers --no_conda_auto_init \
+              --test_output_json planemo_test.json build/cdiphtheriae_typing
+
+      - name: Show which container the jobs used
+        if: always()
+        run: grep -o 'mulled-v2-[0-9a-f]*' -r planemo_test.json | sort | uniq -c || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: planemo-test
+          path: planemo_test.json
